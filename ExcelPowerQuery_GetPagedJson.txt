@@ -1,0 +1,55 @@
+let GetTaskListByFilterId = (FilterId as number) as list =>
+
+let
+
+BaseUrl =  GetRangeValue("ApiUrl") & "Task?",
+PageSize = GetRangeValue("PageSize"),
+TryCount = GetRangeValue("TryCount"),
+
+
+GetPageUrl = (PageNumber, PageSize, FilterId) =>
+let
+    Url = BaseUrl & "pagesize=" & Text.From(PageSize) & "&page=" & Text.From(PageNumber) & "&filterid=" & Text.From(FilterId)
+in Url,
+
+GetJson = (Url, TryCountLeft) =>
+let
+    WebContents = Web.Contents(Url,[ManualStatusHandling={400}]),
+    MetaData = Value.Metadata(WebContents),
+    ResponseStatus = MetaData[Response.Status],        
+    Json = if TryCountLeft > 0 
+           then if ResponseStatus <> 400 
+                then Json.Document(WebContents)
+                else @GetJson(Url, TryCountLeft-1)
+           else error "Call to " & Text.From(Url) & " failed with status 400 after " & Text.From(TryCount) & " attempts"
+in Json,
+
+GetPageCount = () =>
+let
+    /*запрашиваем одну страницу с одной записью, смотрим в тэге Paginator кол-во записей, т.к. в API нет метода count*/
+    Url = GetPageUrl(1, 1, FilterId),
+    Source = GetJson(Url, TryCount),
+    Paginator = Source[Paginator],
+    PaginatorTable = Record.ToTable(Paginator),
+    TransposedPaginatorTable = Table.Transpose(PaginatorTable),
+    Headers = Table.PromoteHeaders(TransposedPaginatorTable, [PromoteAllScalars=true]),
+    Count = Headers{0}[Count],
+    PageCount = Number.RoundUp(Count/PageSize)
+in
+    PageCount,
+
+GetPage = (PageNumber) => 
+let
+    Url = GetPageUrl(PageNumber, PageSize, FilterId),    
+    Source = GetJson(Url,TryCount),
+    Value = Source[Tasks]
+in Value,
+
+PageCount = GetPageCount(),
+PageNumbers = { 1 .. PageCount},
+Pages = if PageCount = 1 then {GetPage(1)} else List.Transform(PageNumbers, each GetPage(_)),
+TaskList = List.Union(Pages)
+
+in TaskList
+
+in GetTaskListByFilterId

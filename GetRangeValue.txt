@@ -1,0 +1,6 @@
+(rangeName) => 
+    let
+      name = Excel.CurrentWorkbook(){[Name=rangeName]}[Content],
+      value = name{0}[Column1]
+    in
+      value
